@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Drone Log Analyzer Pro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.2/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body {
+  background: #0b1120;
+  color: #e2e8f0;
+  font-family: Arial;
+  margin: 0;
+}
+
+header {
+  padding: 20px;
+  text-align: center;
+  font-size: 24px;
+  background: #020617;
+}
+
+.container {
+  width: 90%;
+  margin: auto;
+}
+
+.upload-box {
+  border: 2px dashed #334155;
+  padding: 40px;
+  text-align: center;
+  margin: 20px 0;
+  cursor: pointer;
+}
+
+.card {
+  background: #020617;
+  padding: 20px;
+  margin: 20px 0;
+  border-radius: 10px;
+}
+
+canvas {
+  width: 100%;
+}
+
+button {
+  padding: 10px 20px;
+  background: #2563eb;
+  border: none;
+  color: white;
+  cursor: pointer;
+  border-radius: 6px;
+}
+</style>
+</head>
+
+<body>
+
+<header>🚁 Drone Log Analyzer PRO</header>
+
+<div class="container">
+
+<div class="upload-box" id="dropZone">
+  Drag & Drop CSV File OR Click to Upload
+  <input type="file" id="fileInput" hidden>
+</div>
+
+<div class="card">
+  <h3>📊 IMU Vibration</h3>
+  <canvas id="imuChart"></canvas>
+</div>
+
+<div class="card">
+  <h3>⚡ Motor Output</h3>
+  <canvas id="motorChart"></canvas>
+</div>
+
+<div class="card">
+  <h3>🎯 Attitude Tracking</h3>
+  <canvas id="attChart"></canvas>
+</div>
+
+<div class="card">
+  <h3>🧠 Smart Analysis</h3>
+  <div id="analysis"></div>
+</div>
+
+<button onclick="generatePDF()">📄 Download Report</button>
+
+</div>
+
+<script>
+let analysisText = "";
+
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+
+dropZone.onclick = () => fileInput.click();
+
+dropZone.addEventListener("dragover", e => {
+  e.preventDefault();
+  dropZone.style.borderColor = "#2563eb";
+});
+
+dropZone.addEventListener("drop", e => {
+  e.preventDefault();
+  fileInput.files = e.dataTransfer.files;
+  handleFile(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener("change", e => {
+  handleFile(e.target.files[0]);
+});
+
+function handleFile(file) {
+  Papa.parse(file, {
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      processData(results.data);
+    }
+  });
+}
+
+function processData(data) {
+  let time = [];
+  let vibe = [];
+  let m1 = [], m2 = [];
+  let roll = [], rollDes = [];
+
+  data.forEach(row => {
+    time.push(row.TimeUS);
+
+    vibe.push(parseFloat(row.VibeX) || 0);
+
+    m1.push(parseFloat(row.RCOU_C1) || 0);
+    m2.push(parseFloat(row.RCOU_C2) || 0);
+
+    roll.push(parseFloat(row.ATT_Roll) || 0);
+    rollDes.push(parseFloat(row.ATT_DesRoll) || 0);
+  });
+
+  drawChart("imuChart", time, [{label:"Vibe", data:vibe}]);
+  drawChart("motorChart", time, [
+    {label:"Motor1", data:m1},
+    {label:"Motor2", data:m2}
+  ]);
+  drawChart("attChart", time, [
+    {label:"Roll", data:roll},
+    {label:"Desired", data:rollDes}
+  ]);
+
+  analyze(vibe, m1, m2, roll, rollDes);
+}
+
+function drawChart(id, labels, datasets) {
+  new Chart(document.getElementById(id), {
+    type: "line",
+    data: { labels, datasets }
+  });
+}
+
+function analyze(vibe, m1, m2, roll, rollDes) {
+  let avgVibe = avg(vibe);
+  let motorDiff = Math.abs(avg(m1) - avg(m2));
+  let trackingError = avgDiff(roll, rollDes);
+
+  let result = "";
+
+  if (avgVibe > 30) result += "⚠️ High vibration → check props/frame<br>";
+  else result += "✅ Vibration OK<br>";
+
+  if (motorDiff > 120) result += "⚠️ Motor imbalance detected<br>";
+  else result += "✅ Motors balanced<br>";
+
+  if (trackingError > 5) result += "⚠️ Poor PID tuning (tracking error high)<br>";
+  else result += "✅ PID tuning good<br>";
+
+  analysisText = result;
+  document.getElementById("analysis").innerHTML = result;
+}
+
+function avg(arr) {
+  return arr.reduce((a,b)=>a+b,0)/arr.length;
+}
+
+function avgDiff(a, b) {
+  let sum = 0;
+  for (let i=0;i<a.length;i++) {
+    sum += Math.abs(a[i]-b[i]);
+  }
+  return sum/a.length;
+}
+
+function generatePDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  doc.text("Drone Log Report", 10, 10);
+  doc.text(analysisText.replace(/<br>/g,"\n"), 10, 20);
+
+  doc.save("report.pdf");
+}
+</script>
+
+</body>
+</html>
